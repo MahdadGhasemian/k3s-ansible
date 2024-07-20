@@ -1,0 +1,9 @@
+---
+- name: "provisioning : installation common setting"
+  hosts: all
+  gather_facts: true
+
+  tasks:
+    - name: "include the common role"
+      ansible.builtin.include_role:
+        name: "common"
