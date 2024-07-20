@@ -110,7 +110,7 @@
         seconds: 10
 
     - name: Check whether kubectl is installed on control node
-      ansible.builtin.command: 'kubectl'
+      ansible.builtin.command: "kubectl"
       register: kubectl_installed
       ignore_errors: true
       delegate_to: 127.0.0.1
@@ -138,30 +138,45 @@
             dest: "{{ kubeconfig }}"
             flat: true
 
-        - name: Change server address in kubeconfig on control node
-          ansible.builtin.shell: |
-            KUBECONFIG={{ kubeconfig }} kubectl config set-cluster default --server=https://{{ api_endpoint }}:{{ api_port }}
+        - name: Replace localhost with host IP in kubeconfig
+          ansible.builtin.replace:
+            path: "{{ kubeconfig }}"
+            regexp: "127.0.0.1"
+            replace: "{{ api_endpoint }}"
           delegate_to: 127.0.0.1
           become: false
-          register: csa_result
-          changed_when:
-            - csa_result.rc == 0
+
+        # - name: Change server address in kubeconfig on control node
+        #   ansible.builtin.shell: |
+        #     KUBECONFIG={{ kubeconfig }} kubectl config set-cluster default --server=https://{{ api_endpoint }}:{{ api_port }}
+        #   delegate_to: 127.0.0.1
+        #   become: false
+        #   register: csa_result
+        #   changed_when:
+        #     - csa_result.rc == 0
 
         - name: Setup kubeconfig context on control node - {{ cluster_context }}
           when: kubeconfig != "~/.kube/config"
           ansible.builtin.replace:
             path: "{{ kubeconfig }}"
-            regexp: 'name: default'
-            replace: 'name: {{ cluster_context }}'
+            regexp: "default"
+            replace: "{{ cluster_context }}"
           delegate_to: 127.0.0.1
           become: false
+        
+        - name: Copy {{ kubeconfig }} to {{ kubeconfig_terraform }}
+          ansible.builtin.copy:
+            src: "{{ kubeconfig }}"
+            dest: "{{ kubeconfig_terraform }}"
+          delegate_to: 127.0.0.1
+          become: false
+          when: kubeconfig_terraform is defined
 
         - name: Merge with any existing kubeconfig on control node
           when: kubeconfig != "~/.kube/config"
           ansible.builtin.shell: |
             TFILE=$(mktemp)
-            KUBECONFIG={{ kubeconfig }} kubectl config set-context {{ cluster_context }} --user={{ cluster_context }} --cluster={{ cluster_context }}
-            KUBECONFIG={{ kubeconfig }} kubectl config view --flatten > ${TFILE}
+            KUBECONFIG=~/.kube/config:{{ kubeconfig }} kubectl config view --flatten > ${TFILE}
             mv ${TFILE} {{ kubeconfig }}
           delegate_to: 127.0.0.1
           become: false
@@ -230,7 +245,6 @@
 - name: Setup kubectl for user
   when: user_kubectl
   block:
-
     - name: Create kubectl symlink
       when: lookup('fileglob', '/usr/local/bin/kubectl', errors='warn') | length == 0
       ansible.builtin.file:
@@ -256,8 +270,8 @@
     - name: Configure default KUBECONFIG for user
       ansible.builtin.lineinfile:
         path: ~{{ ansible_user }}/.bashrc
-        regexp: 'export KUBECONFIG=~/.kube/config'
-        line: 'export KUBECONFIG=~/.kube/config # Added by k3s-ansible'
+        regexp: "export KUBECONFIG=~/.kube/config"
+        line: "export KUBECONFIG=~/.kube/config # Added by k3s-ansible"
         state: present
 
     - name: Configure kubectl autocomplete
